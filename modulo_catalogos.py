@@ -1885,9 +1885,17 @@ def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     Retorna lista de nombres de materiales del catálogo.
     Uso en Fichas Técnicas para autocomplete.
     """
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    try:
+        with sqlite3.connect(CAT_DB_PATH) as con:
+            cur = con.cursor()
+            if solo_activos:
+                cur.execute("SELECT nombre FROM materiales WHERE estatus='ACTIVO' ORDER BY nombre")
+            else:
+                cur.execute("SELECT nombre FROM materiales ORDER BY nombre")
+            rows = cur.fetchall()
+            return [r[0] for r in rows]
+    except Exception:
+        return []
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1896,20 +1904,30 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    try:
+        with sqlite3.connect(CAT_DB_PATH) as con:
+            cur = con.cursor()
+            cur.execute("SELECT datos_json FROM materiales WHERE nombre=?", (nombre.strip().upper(),))
+            row = cur.fetchone()
+            if row:
+                return json.loads(row[0])
+    except Exception:
+        pass
     return {}
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    try:
+        with sqlite3.connect(CAT_DB_PATH) as con:
+            cur = con.cursor()
+            if solo_activos:
+                cur.execute("SELECT nombre FROM trabajadores WHERE estatus='ACTIVO' ORDER BY nombre")
+            else:
+                cur.execute("SELECT nombre FROM trabajadores ORDER BY nombre")
+            rows = cur.fetchall()
+            return [r[0] for r in rows]
+    except Exception:
+        return []
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1962,13 +1980,31 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    try:
+        with sqlite3.connect(CAT_DB_PATH) as con:
+            cur = con.cursor()
+            if solo_activos:
+                cur.execute("SELECT nombre FROM proveedores WHERE estatus='ACTIVO' ORDER BY nombre")
+            else:
+                cur.execute("SELECT nombre FROM proveedores ORDER BY nombre")
+            rows = cur.fetchall()
+            return [r[0] for r in rows]
+    except Exception:
+        return []
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    try:
+        with sqlite3.connect(CAT_DB_PATH) as con:
+            cur = con.cursor()
+            if solo_activos:
+                cur.execute("SELECT nombre FROM clientes WHERE estatus='ACTIVO' ORDER BY nombre")
+            else:
+                cur.execute("SELECT nombre FROM clientes ORDER BY nombre")
+            rows = cur.fetchall()
+            return [r[0] for r in rows]
+    except Exception:
+        return []
 
 
 def cat_precarga_material(nombre: str) -> dict:
