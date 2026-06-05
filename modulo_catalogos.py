@@ -281,25 +281,50 @@ def cat_eliminar(tabla: str, registro_id: int):
     con.close()
 
 def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
-    """Busca por nombre o cualquier campo en datos_json."""
+    """
+    Busca por nombre o cualquier campo en datos_json.
+    ⚡ OPTIMIZACIÓN: Si 'texto' está vacío, se omite el filtrado por LIKE para evitar
+    el escaneo de la columna datos_json y permitir un plan de ejecución más simple.
+    """
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+
+    texto = texto.strip().upper()
+    estatus = estatus.upper()
+
+    if not texto:
+        # Búsqueda rápida sin filtros de texto
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                ORDER BY nombre ASC
+            """)
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE estatus=?
+                ORDER BY nombre ASC
+            """, (estatus,))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{texto}%"
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus))
+
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1895,15 +1920,19 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna dict con datos del material (tipo, unidad, depto, visible_monitor).
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
+    ⚡ OPTIMIZACIÓN: Búsqueda directa por nombre (indexado) en lugar de usar cat_buscar.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    try:
+        cur.execute("SELECT datos_json FROM materiales WHERE nombre=?", (nombre.strip().upper(),))
+        row = cur.fetchone()
+        if row:
+            return json.loads(row[0])
+    except Exception:
+        pass
+    finally:
+        con.close()
     return {}
 
 

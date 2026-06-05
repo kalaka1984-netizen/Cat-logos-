@@ -1,0 +1,3 @@
+## 2025-05-15 - [Database Indexing & GUI Dependencies]
+**Learning:** `cat_get_material_por_nombre` was previously implemented by calling a generic search function (`cat_buscar`) that used `LIKE` and then filtered results in Python. This was $O(N)$ and bypassed the database index on the `nombre` column. Also, `modulo_catalogos.py` executes GUI logic upon import, making it difficult to test in headless environments without extensive mocking.
+**Action:** Always check if a specialized fast-path query can replace a generic search. When testing modules with side-effects on import (like GUI initialization), use a comprehensive mocking strategy for `tkinter` and `customtkinter` to allow functional testing of non-GUI logic.
