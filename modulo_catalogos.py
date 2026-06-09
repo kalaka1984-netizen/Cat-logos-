@@ -280,26 +280,39 @@ def cat_eliminar(tabla: str, registro_id: int):
     con.commit()
     con.close()
 
-def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
-    """Busca por nombre o cualquier campo en datos_json."""
+def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS", columnas: str = "*"):
+    """
+    Busca por nombre o cualquier campo en datos_json.
+    'columnas' permite optimizar la consulta seleccionando campos específicos.
+    """
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+
+    texto = texto.strip().upper()
+    if not texto:
+        # Optimización: evitar LIKE en datos_json si no hay texto de búsqueda
+        if estatus == "TODOS":
+            cur.execute(f"SELECT {columnas} FROM {tabla} ORDER BY nombre ASC")
+        else:
+            cur.execute(f"""
+                SELECT {columnas} FROM {tabla}
+                WHERE estatus=? ORDER BY nombre ASC
+            """, (estatus.upper(),))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{texto}%"
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT {columnas} FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT {columnas} FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus.upper()))
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1886,8 +1899,8 @@ def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     Uso en Fichas Técnicas para autocomplete.
     """
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    filas = cat_buscar("materiales", "", estatus, columnas="nombre")
+    return [f[0] for f in filas]
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1909,7 +1922,8 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    filas = cat_buscar("trabajadores", "", estatus, columnas="nombre")
+    return [f[0] for f in filas]
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1963,12 +1977,14 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    filas = cat_buscar("proveedores", "", estatus, columnas="nombre")
+    return [f[0] for f in filas]
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    filas = cat_buscar("clientes", "", estatus, columnas="nombre")
+    return [f[0] for f in filas]
 
 
 def cat_precarga_material(nombre: str) -> dict:
