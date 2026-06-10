@@ -280,26 +280,38 @@ def cat_eliminar(tabla: str, registro_id: int):
     con.commit()
     con.close()
 
-def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
-    """Busca por nombre o cualquier campo en datos_json."""
+def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS",
+               columnas: str = "id, nombre, datos_json, estatus, fecha_alta, fecha_mod"):
+    """
+    Busca por nombre o cualquier campo en datos_json.
+    Optimizado para evitar LIKE cuando el texto de búsqueda es vacío.
+    """
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+
+    # ⚡ OPTIMIZACIÓN BOLT: Evitar LIKE en JSON si no hay texto de búsqueda
+    if not texto.strip():
+        if estatus == "TODOS":
+            cur.execute(f"SELECT {columnas} FROM {tabla} ORDER BY nombre ASC")
+        else:
+            cur.execute(f"SELECT {columnas} FROM {tabla} WHERE estatus=? ORDER BY nombre ASC",
+                        (estatus.upper(),))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{texto.upper()}%"
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT {columnas} FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT {columnas} FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus.upper()))
+
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1886,8 +1898,9 @@ def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     Uso en Fichas Técnicas para autocomplete.
     """
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    # ⚡ OPTIMIZACIÓN BOLT: Solo pedir la columna 'nombre' para evitar cargar datos_json innecesariamente
+    filas = cat_buscar("materiales", "", estatus, columnas="nombre")
+    return [f[0] for f in filas]
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1896,20 +1909,26 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    # ⚡ OPTIMIZACIÓN BOLT: Búsqueda exacta por índice en lugar de cat_buscar con LIKE
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    cur.execute("SELECT datos_json FROM materiales WHERE nombre=?",
+                (nombre.strip().upper(),))
+    row = cur.fetchone()
+    con.close()
+
+    if row:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return {}
     return {}
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    # ⚡ OPTIMIZACIÓN BOLT: Solo pedir la columna 'nombre'
+    return [f[0] for f in cat_buscar("trabajadores", "", estatus, columnas="nombre")]
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1963,12 +1982,14 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    # ⚡ OPTIMIZACIÓN BOLT: Solo pedir la columna 'nombre'
+    return [f[0] for f in cat_buscar("proveedores", "", estatus, columnas="nombre")]
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
     estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    # ⚡ OPTIMIZACIÓN BOLT: Solo pedir la columna 'nombre'
+    return [f[0] for f in cat_buscar("clientes", "", estatus, columnas="nombre")]
 
 
 def cat_precarga_material(nombre: str) -> dict:
