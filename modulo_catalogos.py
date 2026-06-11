@@ -2163,6 +2163,54 @@ def ic_listar_estilos(buscar: str = "", departamento: str = "TODOS") -> list:
              "precio_par": r[3], "notas": r[4], "fecha_alta": r[5]}
             for r in rows]
 
+def ic_listar_estilos_con_resumen(buscar: str = "", departamento: str = "TODOS") -> list:
+    """
+    Versión optimizada que obtiene estilos junto con el conteo de fracciones
+    y suma de precios en una sola consulta (evita N+1).
+    """
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    like = f"%{buscar.upper()}%"
+
+    query = """
+        SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+               COUNT(f.id) as n_frac,
+               SUM(f.precio) as suma_frac
+        FROM ic_estilos e
+        LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+    """
+
+    where_clauses = []
+    params = []
+
+    if buscar:
+        where_clauses.append("(e.estilo LIKE ? OR e.notas LIKE ?)")
+        params.extend([like, like])
+
+    if departamento != "TODOS":
+        where_clauses.append("e.departamento = ?")
+        params.append(departamento.upper())
+
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    query += " GROUP BY e.id"
+
+    if departamento == "TODOS":
+        query += " ORDER BY e.departamento, e.estilo"
+    else:
+        query += " ORDER BY e.estilo"
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    con.close()
+
+    return [{
+        "id": r[0], "estilo": r[1], "departamento": r[2],
+        "precio_par": r[3], "notas": r[4], "fecha_alta": r[5],
+        "n_frac": r[6], "suma_frac": r[7] or 0.0
+    } for r in rows]
+
 def ic_guardar_fraccion(ic_estilo_id: int, nombre: str,
                         precio: float, orden: int = 0,
                         registro_id: int = None) -> tuple:
@@ -2743,28 +2791,31 @@ class IC_Vista(ctk.CTkFrame):
 
         dep_fil = self._var_dep_filtro.get() if hasattr(self, "_var_dep_filtro") else "TODOS"
         busq    = self._var_busq.get().strip()
-        filas   = ic_listar_estilos(buscar=busq, departamento=dep_fil)
+        # Versión optimizada que evita N+1 consultas
+        filas   = ic_listar_estilos_con_resumen(buscar=busq, departamento=dep_fil)
 
         _TBL_FS = max(7, int(_FS * 0.32))
         _WEIGHTS = (12, 8, 8, 8, 10, 5)
 
         for row in filas:
-            fracs    = ic_listar_fracciones(row["id"])
-            n_frac   = len(fracs)
-            suma_frac = sum(fr["precio"] for fr in fracs)
-            modo     = "FRACCIONADO" if fracs else "PAR COMPLETO"
+            n_frac = row["n_frac"]
+            suma_frac = row["suma_frac"]
 
             # Semáforo balance
-            if fracs:
+            if n_frac > 0:
                 diff = round(row["precio_par"] - suma_frac, 4)
                 if diff == 0:
-                    bal_col = _GRN; bal_txt = "✓ CUADRA"
+                    bal_col = _GRN
+                    bal_txt = "✓ CUADRA"
                 elif diff > 0:
-                    bal_col = _AMB; bal_txt = f"FALTA ${diff:.2f}"
+                    bal_col = _AMB
+                    bal_txt = f"FALTA ${diff:.2f}"
                 else:
-                    bal_col = _RED; bal_txt = f"EXCEDE ${abs(diff):.2f}"
+                    bal_col = _RED
+                    bal_txt = f"EXCEDE ${abs(diff):.2f}"
             else:
-                bal_col = _IC_GOLD; bal_txt = "PAR"
+                bal_col = _IC_GOLD
+                bal_txt = "PAR"
 
             dep_col = _IC_DEP_COL.get(row["departamento"], _TXT2)
             bg_fila = "#0f0d00"
