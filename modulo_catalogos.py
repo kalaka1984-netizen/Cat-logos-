@@ -2142,25 +2142,42 @@ def ic_eliminar_estilo(registro_id: int):
     con.commit(); con.close()
 
 def ic_listar_estilos(buscar: str = "", departamento: str = "TODOS") -> list:
+    """
+    Lista estilos con conteo de fracciones y suma de precios pre-agregados
+    para evitar el problema de consultas N+1 en la UI.
+    """
     con = sqlite3.connect(CAT_DB_PATH); cur = con.cursor()
     like = f"%{buscar.upper()}%"
+
+    # Query base con JOIN para traer agregados de ic_fracciones
+    # Se usa TOTAL() en lugar de SUM() porque TOTAL() siempre retorna float (0.0 si es NULL)
+    sql_base = """
+        SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+               COUNT(f.id) as n_frac,
+               TOTAL(f.precio) as suma_frac
+        FROM ic_estilos e
+        LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+    """
+
     if departamento == "TODOS":
-        cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE estilo LIKE ? OR notas LIKE ?
-            ORDER BY departamento, estilo
+        cur.execute(f"""
+            {sql_base}
+            WHERE e.estilo LIKE ? OR e.notas LIKE ?
+            GROUP BY e.id
+            ORDER BY e.departamento, e.estilo
         """, (like, like))
     else:
-        cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE departamento=? AND (estilo LIKE ? OR notas LIKE ?)
-            ORDER BY estilo
+        cur.execute(f"""
+            {sql_base}
+            WHERE e.departamento=? AND (e.estilo LIKE ? OR e.notas LIKE ?)
+            GROUP BY e.id
+            ORDER BY e.estilo
         """, (departamento.upper(), like, like))
+
     rows = cur.fetchall(); con.close()
     return [{"id": r[0], "estilo": r[1], "departamento": r[2],
-             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5]}
+             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5],
+             "n_frac": r[6], "suma_frac": r[7]}
             for r in rows]
 
 def ic_guardar_fraccion(ic_estilo_id: int, nombre: str,
@@ -2749,13 +2766,12 @@ class IC_Vista(ctk.CTkFrame):
         _WEIGHTS = (12, 8, 8, 8, 10, 5)
 
         for row in filas:
-            fracs    = ic_listar_fracciones(row["id"])
-            n_frac   = len(fracs)
-            suma_frac = sum(fr["precio"] for fr in fracs)
-            modo     = "FRACCIONADO" if fracs else "PAR COMPLETO"
+            # Opt: ya no llamamos a ic_listar_fracciones en bucle (N+1 corregido)
+            n_frac    = row["n_frac"]
+            suma_frac = row["suma_frac"]
 
             # Semáforo balance
-            if fracs:
+            if n_frac > 0:
                 diff = round(row["precio_par"] - suma_frac, 4)
                 if diff == 0:
                     bal_col = _GRN; bal_txt = "✓ CUADRA"
