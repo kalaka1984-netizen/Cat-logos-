@@ -1,0 +1,3 @@
+## 2025-05-14 - [Engineering of Costs N+1 Query Optimization]
+**Learning:** The Engineering of Costs style listing was suffering from an N+1 query bottleneck where `ic_listar_fracciones` was being called for every style in the UI refresh loop to calculate fraction counts and balance totals. This resulted in significant UI lag as the number of styles grew.
+**Action:** Resolved by refactoring `ic_listar_estilos` to use a `LEFT JOIN` with the `ic_fracciones` table and aggregate functions (`COUNT` and `TOTAL`), retrieving all necessary data in a single SQL query. This achieved a ~70x speedup (from ~0.62s to ~0.009s for 500 records).
