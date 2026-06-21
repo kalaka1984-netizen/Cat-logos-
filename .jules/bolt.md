@@ -1,0 +1,3 @@
+## 2025-05-14 - [Metaclass Conflict and N+1 Optimization]
+**Learning:** Mocking GUI components (like `customtkinter.CTkFrame`) with simple `MagicMock` objects can cause metaclass conflicts when the codebase defines classes that inherit from those mocks. Additionally, resolving N+1 query bottlenecks in SQLite with `LEFT JOIN` and `TOTAL()` (instead of `SUM()`) is highly effective for performance and safety against `NULL` values.
+**Action:** Use a real base class (even if a simple stub) in mocks for GUI components that will be inherited. Always prefer `TOTAL()` in SQLite aggregates to avoid `NULL` issues in Python logic.
