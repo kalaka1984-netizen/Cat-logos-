@@ -798,7 +798,6 @@ class CAT_PanelFormulario(ctk.CTkFrame):
             pass
 
         self._edit_id = fid
-        cfg = CAT_CONFIG[self.tabla]
         self._lbl_modo.configure(text=f"✏  EDITAR: {nombre[:18]}")
         self._btn_guardar.configure(
             text="ACTUALIZAR REGISTRO",
@@ -1822,13 +1821,13 @@ class CatalogosMixin:
         cola      = estado.get("pendientes_sync", 0)
 
         if conectado and cola == 0:
-            dot_col = _GRN;  txt = "Firebase ✓"; cola_txt = "Sincronizado"
+            dot_col = _GRN;  txt = "Firebase ✓"
             bg_frame = "#0a1f0a"; bdr_col = _GRN
         elif conectado and cola > 0:
-            dot_col = _AMB;  txt = "Firebase ↑"; cola_txt = f"{cola} pendiente(s)"
+            dot_col = _AMB;  txt = "Firebase ↑"
             bg_frame = "#1a1200"; bdr_col = _AMB
         else:
-            dot_col = _RED;  txt = "Sin Firebase"; cola_txt = "Modo offline"
+            dot_col = _RED;  txt = "Sin Firebase"
             bg_frame = "#200a0a"; bdr_col = _RED
 
         try:
@@ -2142,25 +2141,40 @@ def ic_eliminar_estilo(registro_id: int):
     con.commit(); con.close()
 
 def ic_listar_estilos(buscar: str = "", departamento: str = "TODOS") -> list:
+    """
+    Optimización Bolt: Retorna lista de estilos con n_frac y suma_frac pre-calculados
+    mediante un LEFT JOIN para evitar el problema de N+1 consultas en la UI.
+    """
     con = sqlite3.connect(CAT_DB_PATH); cur = con.cursor()
     like = f"%{buscar.upper()}%"
+
+    query = """
+        SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+               COUNT(f.id), TOTAL(f.precio)
+        FROM ic_estilos e
+        LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+        WHERE (e.estilo LIKE ? OR e.notas LIKE ?)
+    """
+    params = [like, like]
+
+    if departamento != "TODOS":
+        query += " AND e.departamento = ?"
+        params.append(departamento.upper())
+
+    query += " GROUP BY e.id"
+
+    # Mantener el orden original
     if departamento == "TODOS":
-        cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE estilo LIKE ? OR notas LIKE ?
-            ORDER BY departamento, estilo
-        """, (like, like))
+        query += " ORDER BY e.departamento, e.estilo"
     else:
-        cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE departamento=? AND (estilo LIKE ? OR notas LIKE ?)
-            ORDER BY estilo
-        """, (departamento.upper(), like, like))
+        query += " ORDER BY e.estilo"
+
+    cur.execute(query, params)
     rows = cur.fetchall(); con.close()
+
     return [{"id": r[0], "estilo": r[1], "departamento": r[2],
-             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5]}
+             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5],
+             "n_frac": r[6], "suma_frac": r[7]}
             for r in rows]
 
 def ic_guardar_fraccion(ic_estilo_id: int, nombre: str,
@@ -2749,13 +2763,12 @@ class IC_Vista(ctk.CTkFrame):
         _WEIGHTS = (12, 8, 8, 8, 10, 5)
 
         for row in filas:
-            fracs    = ic_listar_fracciones(row["id"])
-            n_frac   = len(fracs)
-            suma_frac = sum(fr["precio"] for fr in fracs)
-            modo     = "FRACCIONADO" if fracs else "PAR COMPLETO"
+            # Optimización Bolt: n_frac y suma_frac ya vienen pre-calculados
+            n_frac   = row["n_frac"]
+            suma_frac = row["suma_frac"]
 
             # Semáforo balance
-            if fracs:
+            if n_frac > 0:
                 diff = round(row["precio_par"] - suma_frac, 4)
                 if diff == 0:
                     bal_col = _GRN; bal_txt = "✓ CUADRA"
