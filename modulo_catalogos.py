@@ -15,8 +15,11 @@
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
-import json, os, datetime, sqlite3, threading
+from tkinter import messagebox
+import json
+import os
+import datetime
+import sqlite3
 
 import customtkinter as ctk
 ctk.set_appearance_mode("dark")
@@ -798,7 +801,7 @@ class CAT_PanelFormulario(ctk.CTkFrame):
             pass
 
         self._edit_id = fid
-        cfg = CAT_CONFIG[self.tabla]
+        CAT_CONFIG[self.tabla]
         self._lbl_modo.configure(text=f"✏  EDITAR: {nombre[:18]}")
         self._btn_guardar.configure(
             text="ACTUALIZAR REGISTRO",
@@ -1822,13 +1825,13 @@ class CatalogosMixin:
         cola      = estado.get("pendientes_sync", 0)
 
         if conectado and cola == 0:
-            dot_col = _GRN;  txt = "Firebase ✓"; cola_txt = "Sincronizado"
+            dot_col = _GRN;  txt = "Firebase ✓"
             bg_frame = "#0a1f0a"; bdr_col = _GRN
         elif conectado and cola > 0:
-            dot_col = _AMB;  txt = "Firebase ↑"; cola_txt = f"{cola} pendiente(s)"
+            dot_col = _AMB;  txt = "Firebase ↑"
             bg_frame = "#1a1200"; bdr_col = _AMB
         else:
-            dot_col = _RED;  txt = "Sin Firebase"; cola_txt = "Modo offline"
+            dot_col = _RED;  txt = "Sin Firebase"
             bg_frame = "#200a0a"; bdr_col = _RED
 
         try:
@@ -2142,25 +2145,38 @@ def ic_eliminar_estilo(registro_id: int):
     con.commit(); con.close()
 
 def ic_listar_estilos(buscar: str = "", departamento: str = "TODOS") -> list:
-    con = sqlite3.connect(CAT_DB_PATH); cur = con.cursor()
+    """
+    Lista estilos con conteo y suma de fracciones pre-calculados vía JOIN
+    para evitar el problema de N+1 queries en la UI.
+    """
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
     like = f"%{buscar.upper()}%"
     if departamento == "TODOS":
         cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE estilo LIKE ? OR notas LIKE ?
-            ORDER BY departamento, estilo
+            SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+                   COUNT(f.id), TOTAL(f.precio)
+            FROM ic_estilos e
+            LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+            WHERE e.estilo LIKE ? OR e.notas LIKE ?
+            GROUP BY e.id
+            ORDER BY e.departamento, e.estilo
         """, (like, like))
     else:
         cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE departamento=? AND (estilo LIKE ? OR notas LIKE ?)
-            ORDER BY estilo
+            SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+                   COUNT(f.id), TOTAL(f.precio)
+            FROM ic_estilos e
+            LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+            WHERE e.departamento=? AND (e.estilo LIKE ? OR e.notas LIKE ?)
+            GROUP BY e.id
+            ORDER BY e.estilo
         """, (departamento.upper(), like, like))
-    rows = cur.fetchall(); con.close()
+    rows = cur.fetchall()
+    con.close()
     return [{"id": r[0], "estilo": r[1], "departamento": r[2],
-             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5]}
+             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5],
+             "n_frac": r[6], "suma_frac": r[7]}
             for r in rows]
 
 def ic_guardar_fraccion(ic_estilo_id: int, nombre: str,
@@ -2739,32 +2755,36 @@ class IC_Vista(ctk.CTkFrame):
     # ── Refrescar lista derecha ───────────────────────────────────────────
     def _refrescar_lista(self):
         f = self._frame_lista
-        for w in f.winfo_children(): w.destroy()
+        for w in f.winfo_children():
+            w.destroy()
 
         dep_fil = self._var_dep_filtro.get() if hasattr(self, "_var_dep_filtro") else "TODOS"
-        busq    = self._var_busq.get().strip()
-        filas   = ic_listar_estilos(buscar=busq, departamento=dep_fil)
+        busq = self._var_busq.get().strip()
+        filas = ic_listar_estilos(buscar=busq, departamento=dep_fil)
 
         _TBL_FS = max(7, int(_FS * 0.32))
         _WEIGHTS = (12, 8, 8, 8, 10, 5)
 
         for row in filas:
-            fracs    = ic_listar_fracciones(row["id"])
-            n_frac   = len(fracs)
-            suma_frac = sum(fr["precio"] for fr in fracs)
-            modo     = "FRACCIONADO" if fracs else "PAR COMPLETO"
+            # Optimización Bolt: usamos datos pre-agregados en ic_listar_estilos
+            n_frac = row["n_frac"]
+            suma_frac = row["suma_frac"]
 
             # Semáforo balance
-            if fracs:
+            if n_frac > 0:
                 diff = round(row["precio_par"] - suma_frac, 4)
                 if diff == 0:
-                    bal_col = _GRN; bal_txt = "✓ CUADRA"
+                    bal_col = _GRN
+                    bal_txt = "✓ CUADRA"
                 elif diff > 0:
-                    bal_col = _AMB; bal_txt = f"FALTA ${diff:.2f}"
+                    bal_col = _AMB
+                    bal_txt = f"FALTA ${diff:.2f}"
                 else:
-                    bal_col = _RED; bal_txt = f"EXCEDE ${abs(diff):.2f}"
+                    bal_col = _RED
+                    bal_txt = f"EXCEDE ${abs(diff):.2f}"
             else:
-                bal_col = _IC_GOLD; bal_txt = "PAR"
+                bal_col = _IC_GOLD
+                bal_txt = "PAR"
 
             dep_col = _IC_DEP_COL.get(row["departamento"], _TXT2)
             bg_fila = "#0f0d00"
