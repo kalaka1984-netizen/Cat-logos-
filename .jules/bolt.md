@@ -1,0 +1,3 @@
+## 2025-07-08 - N+1 Query in IC_Vista
+**Learning:** The Engineering of Costs (IC) module was performing individual SQL queries for each style in the list to count and sum fractions, causing significant UI lag as the database grew. Using a `LEFT JOIN` with `GROUP BY` and SQLite's `TOTAL()` function (which handles NULLs gracefully by returning 0.0) allowed for a single-query fetch of all necessary display data.
+**Action:** Always prefer SQL-level aggregation for list views. Use `TOTAL()` in SQLite instead of `SUM()` for columns that might have no matching rows in a JOIN to avoid handling None/NULL in Python.
