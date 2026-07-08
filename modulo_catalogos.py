@@ -281,25 +281,45 @@ def cat_eliminar(tabla: str, registro_id: int):
     con.close()
 
 def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
-    """Busca por nombre o cualquier campo en datos_json."""
+    """
+    Busca por nombre o cualquier campo en datos_json.
+    Optimization: If search text is empty, bypass LIKE and JSON scanning.
+    """
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+
+    if not texto.strip():
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                ORDER BY nombre ASC
+            """)
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE estatus=?
+                ORDER BY nombre ASC
+            """, (estatus.upper(),))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{texto.upper()}%"
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus.upper()))
+
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1895,15 +1915,20 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna dict con datos del material (tipo, unidad, depto, visible_monitor).
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
+    Optimization: Direct equality lookup on 'nombre' column.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+        SELECT datos_json FROM materiales WHERE nombre = ?
+    """, (nombre.strip().upper(),))
+    row = cur.fetchone()
+    con.close()
+    if row:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return {}
     return {}
 
 
@@ -2142,25 +2167,36 @@ def ic_eliminar_estilo(registro_id: int):
     con.commit(); con.close()
 
 def ic_listar_estilos(buscar: str = "", departamento: str = "TODOS") -> list:
+    """
+    Optimized version that joins with ic_fracciones to avoid N+1 queries.
+    Returns n_frac and suma_frac pre-calculated.
+    """
     con = sqlite3.connect(CAT_DB_PATH); cur = con.cursor()
     like = f"%{buscar.upper()}%"
     if departamento == "TODOS":
         cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE estilo LIKE ? OR notas LIKE ?
-            ORDER BY departamento, estilo
+            SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+                   COUNT(f.id) as n_frac, TOTAL(f.precio) as suma_frac
+            FROM ic_estilos e
+            LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+            WHERE e.estilo LIKE ? OR e.notas LIKE ?
+            GROUP BY e.id
+            ORDER BY e.departamento, e.estilo
         """, (like, like))
     else:
         cur.execute("""
-            SELECT id, estilo, departamento, precio_par, notas, fecha_alta
-            FROM ic_estilos
-            WHERE departamento=? AND (estilo LIKE ? OR notas LIKE ?)
-            ORDER BY estilo
+            SELECT e.id, e.estilo, e.departamento, e.precio_par, e.notas, e.fecha_alta,
+                   COUNT(f.id) as n_frac, TOTAL(f.precio) as suma_frac
+            FROM ic_estilos e
+            LEFT JOIN ic_fracciones f ON e.id = f.ic_estilo_id
+            WHERE e.departamento=? AND (e.estilo LIKE ? OR e.notas LIKE ?)
+            GROUP BY e.id
+            ORDER BY e.estilo
         """, (departamento.upper(), like, like))
     rows = cur.fetchall(); con.close()
     return [{"id": r[0], "estilo": r[1], "departamento": r[2],
-             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5]}
+             "precio_par": r[3], "notas": r[4], "fecha_alta": r[5],
+             "n_frac": r[6], "suma_frac": r[7]}
             for r in rows]
 
 def ic_guardar_fraccion(ic_estilo_id: int, nombre: str,
@@ -2749,13 +2785,11 @@ class IC_Vista(ctk.CTkFrame):
         _WEIGHTS = (12, 8, 8, 8, 10, 5)
 
         for row in filas:
-            fracs    = ic_listar_fracciones(row["id"])
-            n_frac   = len(fracs)
-            suma_frac = sum(fr["precio"] for fr in fracs)
-            modo     = "FRACCIONADO" if fracs else "PAR COMPLETO"
+            n_frac    = row["n_frac"]
+            suma_frac = row["suma_frac"]
 
             # Semáforo balance
-            if fracs:
+            if n_frac > 0:
                 diff = round(row["precio_par"] - suma_frac, 4)
                 if diff == 0:
                     bal_col = _GRN; bal_txt = "✓ CUADRA"
