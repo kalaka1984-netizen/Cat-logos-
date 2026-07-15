@@ -1,0 +1,3 @@
+## 2025-05-15 - N+1 Query Bottleneck in Engineering of Costs
+**Learning:** The Engineering of Costs module suffered from an N+1 query bottleneck where refreshing the style list triggered a separate query for each row to fetch its fractions. This resulted in O(N) database roundtrips, significantly slowing down the UI as the database grew.
+**Action:** Use a single SQL query with a `LEFT JOIN` and `GROUP BY` to pre-calculate counts and sums. Utilize SQLite's `TOTAL()` aggregate function instead of `SUM()` to ensure a float result (0.0) is always returned even when no child records exist, preventing type errors in Python.
