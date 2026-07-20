@@ -1,0 +1,3 @@
+## 2025-02-21 - [Optimizing SQLite List Queries and Avoiding Wildcards]
+**Learning:** Sequential queries in loop (N+1 query pattern) in SQLite can be easily refactored using SQL aggregation with LEFT JOIN and GROUP BY. Additionally, executing LIKE queries on columns storing JSON blobs (like `datos_json`) scales poorly. Bypassing LIKE checks when the search text is empty prevents unnecessary full table scans and reduces data deserialization.
+**Action:** Always inspect loops containing queries to merge them using JOINs/aggregations. Explicitly check for empty search texts to skip LIKE statements and let the database engine perform optimal scannings.
