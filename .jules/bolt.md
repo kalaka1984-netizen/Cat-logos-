@@ -1,0 +1,3 @@
+## 2025-07-22 - [Headless Mocking of tkinter and customtkinter]
+**Learning:** In a headless testing environment, importing GUI-related modules that automatically calculate screen scaling can cause TypeErrors (e.g., comparing mock objects to integers during size checks). Additionally, using simple MagicMocks for `customtkinter` causes metaclass conflicts when Python classes inherit from them.
+**Action:** Mock tkinter's `Tk` instance to return dummy integer values for screen metrics (e.g., `winfo_screenwidth() -> 1920`), and define custom dummy base classes (like `DummyCTkFrame`) instead of plain MagicMocks to serve as bases for GUI inheritance in tests.
