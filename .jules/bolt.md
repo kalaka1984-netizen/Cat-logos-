@@ -1,0 +1,3 @@
+## 2024-11-23 - Headless CustomTkinter Mocking in Python
+**Learning:** In headless CI/testing environments without python3-tk, importing customtkinter / tkinter raises exceptions or causes metaclass conflicts if standard mock objects are subclassed. Furthermore, custom scaling methods that call winfo_screenwidth/height will raise TypeError if mock returns MagicMock instead of integer comparison values.
+**Action:** Mock tkinter.Tk()'s winfo_screenwidth and winfo_screenheight to return integer values (e.g., 1920, 1080) and define basic dummy class structures for customtkinter widgets (e.g., CTkFrame, CTkToplevel) to prevent metaclass conflicts during test suite imports.
