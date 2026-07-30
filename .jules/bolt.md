@@ -1,0 +1,3 @@
+## 2025-03-01 - N+1 Query Aggregation in Engineering of Costs
+**Learning:** List view refreshes involving parent-child relationships (like styles and fractions) are highly susceptible to N+1 query bottlenecks if child counts and sums are loaded individually per style in a Python loop. Combining these counts and sums using standard SQL JOIN queries with aggregated `TOTAL()` and `COUNT()` aggregates provides a 37x speedup (~0.058s to 0.0016s for 200 records) and avoids Python type errors, while also enabling empty search string bypass optimization on indexes.
+**Action:** Always identify list-rendering queries with parent-child associations and replace loops of detail-record lookups with database-level JOIN aggregation using SQLite aggregate functions.
