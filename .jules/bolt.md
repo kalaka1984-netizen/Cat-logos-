@@ -1,0 +1,3 @@
+## 2026-06-02 - [N+1 query bottleneck & bypass-LIKE database optimizations]
+**Learning:** In list view refreshes, fetching child records individually within a loop causes a severe N+1 query problem. Pre-aggregating these fields via SQL LEFT JOIN and aggregate functions like TOTAL() resolves this. Additionally, when searching for an exact item (e.g. by name) or when search filters are empty, bypassing SQL LIKE operators avoids expensive full table scans on large JSON and text columns.
+**Action:** Always favor SQLite TOTAL() over SUM() for left joins to ensure float returns even on empty results, and check search query strings before executing LIKE clauses to bypass unnecessary filter patterns.
