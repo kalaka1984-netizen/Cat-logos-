@@ -1,0 +1,3 @@
+## 2026-06-02 - SQLite TOTAL() over SUM() for Aggregate Queries
+**Learning:** When performing left joins to pre-aggregate child rows (e.g., summing prices of style fractions), SQLite's `SUM()` function returns `NULL` when there are no matching child rows. This causes type mismatches and `TypeError` in downstream Python code expecting float values. SQLite's `TOTAL()` function, however, always returns a float (defaulting to `0.0` when no rows match), providing built-in type safety.
+**Action:** Always prefer `TOTAL()` over `SUM()` in SQLite left joins to handle missing child records safely and prevent Python type errors.
