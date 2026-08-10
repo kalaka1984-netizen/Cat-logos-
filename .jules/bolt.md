@@ -1,0 +1,3 @@
+## 2026-06-02 - SQLite LEFT JOIN Aggregations & Headless Testing
+**Learning:** Using SQLite's `TOTAL()` aggregate function is preferred over `SUM()` because `TOTAL()` always returns a float and defaults to 0.0 when no matching records exist, preventing `NoneType` errors in Python. Furthermore, Tkinter/customtkinter database helper functions can be easily tested in headless environments by calling the functions directly and bypassing the instantiation of GUI elements.
+**Action:** Always favor `TOTAL()` for sums in SQLite queries and isolate database logic from GUI setup to keep tests lightweight and fully headless-compatible.
