@@ -1,0 +1,3 @@
+## 2025-02-17 - [Tkinter Scale Check Metaclass Conflicts & N+1 DB Queries]
+**Learning:** Instantiating tkinter/customtkinter components in headless test environments causes windowing crashes or type errors on `Tk()` property inquiries like `winfo_screenwidth()`. In SQLite databases with aggregate sub-records, executing loops that perform independent select queries per-row introduces heavy N+1 query overhead.
+**Action:** Mock `customtkinter` classes safely as dummy base classes and ensure `winfo_screenwidth/height` return integer fallbacks. Use aggregate `LEFT JOIN` and `GROUP BY` to retrieve parent-child attributes in a single query.
