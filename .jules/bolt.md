@@ -1,0 +1,3 @@
+## 2025-02-14 - N+1 Queries in Desktop List Rendering
+**Learning:** Desktop lists (such as the style list in Engineering of Costs) are prone to severe N+1 queries. Querying associated detail records (like style fractions) for every item inside a python rendering loop causes catastrophic performance overhead when the database scale grows. SQLite's `TOTAL()` is superior to `SUM()` because it always returns a float (defaulting to 0.0 when no child rows match), avoiding Python type errors.
+**Action:** Always replace per-row detail lookups inside GUI rendering loops with database-side aggregations utilizing `LEFT JOIN`, `COUNT()`, and `TOTAL()` grouped by the parent record's primary key to achieve efficient O(1) query complexity.
