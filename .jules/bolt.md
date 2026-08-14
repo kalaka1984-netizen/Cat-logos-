@@ -1,0 +1,3 @@
+## 2026-06-02 - IC List pre-aggregation and Lookup optimizations
+**Learning:** Legacy codebase used O(N) database scans (e.g. cat_buscar with LIKE and Python-side filtering) for exact match key lookups (cat_get_material_por_nombre) and suffered from an N+1 query pattern during list updates (refrescar_lista loading child records sequentially).
+**Action:** Replace O(N) table scans with single direct SELECT on the indexed primary key column. Replace child sequential lookups inside UI render loops with a single SQL LEFT JOIN pre-aggregation (using TOTAL() to safely aggregate numeric fields and guarantee type compliance) to scale gracefully with large lists.
