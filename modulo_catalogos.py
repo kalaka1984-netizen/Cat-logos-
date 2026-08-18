@@ -1895,15 +1895,24 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna dict con datos del material (tipo, unidad, depto, visible_monitor).
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
+    Optimization: Direct SELECT on indexed 'nombre' column to bypass cat_buscar O(N) scan.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    nm = nombre.strip().upper()
+    if not nm:
+        return {}
+    con = None
+    try:
+        con = sqlite3.connect(CAT_DB_PATH)
+        cur = con.cursor()
+        cur.execute("SELECT datos_json FROM materiales WHERE nombre = ?", (nm,))
+        row = cur.fetchone()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception:
+        pass
+    finally:
+        if con:
+            con.close()
     return {}
 
 
