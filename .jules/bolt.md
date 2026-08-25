@@ -1,0 +1,3 @@
+## 2025-08-25 - Direct Indexed Point Lookup vs LIKE Scan for Material Names
+**Learning:** Delegating exact lookup helper functions (like `cat_get_material_por_nombre`) to general catalog search (`cat_buscar`) causes O(N) full table scans with `LIKE` evaluations across large JSON columns (`datos_json`) and Python iteration overhead. Direct point lookups on indexed unique columns (e.g. `WHERE nombre=?`) execute in O(1) time and eliminate JSON scanning.
+**Action:** Always check if a helper function searches for an exact indexed key before calling broad search routines that evaluate `LIKE` pattern matching on JSON columns.
