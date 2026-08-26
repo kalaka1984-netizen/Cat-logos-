@@ -1,0 +1,3 @@
+## 2026-06-02 - SQLite JSON Blob Full-Table Scanning in Catalog Lookups
+**Learning:** When storing entity metadata in `datos_json` columns, performing wildcard `LIKE` search or calling general search helpers (e.g., `cat_buscar`) with empty query strings forces SQLite to scan and evaluate `LIKE '%'` against every JSON text blob in the table. Furthermore, fetching `datos_json` when only entity names are required creates excessive I/O and deserialization overhead.
+**Action:** Always bypass `LIKE` evaluation when search query strings are empty, use direct indexed equality matches (`WHERE nombre=?`) for exact entity lookups, and execute index-only `SELECT nombre` queries for autocomplete name listings.
