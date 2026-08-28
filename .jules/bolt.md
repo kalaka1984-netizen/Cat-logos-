@@ -1,0 +1,3 @@
+## 2026-08-28 - Pre-aggregation SQL JOIN for List Refreshes and Direct Point Lookups
+**Learning:** In desktop SQLite applications with list views, looping over style rows to execute individual child queries (`ic_listar_fracciones`) introduces an N+1 query bottleneck. Using `LEFT JOIN` with `COUNT()` and `TOTAL()` pre-aggregates child data in a single query. Additionally, replacing substring search `cat_buscar` with direct `WHERE nombre=?` indexed lookups reduces point lookup overhead from O(N) to O(1).
+**Action:** Always pre-aggregate child stats in SQL list queries with `LEFT JOIN` + `GROUP BY` and use direct equality queries for exact name lookups.
