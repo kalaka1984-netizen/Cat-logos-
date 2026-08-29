@@ -1,0 +1,3 @@
+## 2025-05-20 - N+1 Query Elimination via SQLite Aggregates
+**Learning:** In list views with child records (like styles with fractions), calling child lookup functions inside loops creates severe N+1 database connection overhead (~39x slowdown). Using `LEFT JOIN` with `TOTAL(col)` and `COUNT(col)` pre-aggregates child counts and sums in a single query. `TOTAL()` is preferred over `SUM()` in SQLite because `TOTAL()` always returns float 0.0 instead of NULL when no child rows match.
+**Action:** Always pre-aggregate child metrics in master query functions using `LEFT JOIN` and `GROUP BY` when displaying list views.
