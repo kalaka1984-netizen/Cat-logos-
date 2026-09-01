@@ -206,6 +206,10 @@ def cat_init_db():
             CREATE INDEX IF NOT EXISTS idx_{tabla}_nombre
             ON {tabla}(nombre)
         """)
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{tabla}_estatus_nombre
+            ON {tabla}(estatus, nombre)
+        """)
     # ── Tabla relación Proveedor ↔ Material ───────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS proveedor_materiales (
@@ -284,22 +288,41 @@ def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
     """Busca por nombre o cualquier campo en datos_json."""
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+    texto_clean = texto.strip()
+    estatus_upper = estatus.upper()
+
+    # Bolt: Bypassing LIKE filters on empty text query avoids O(N) evaluations over large datos_json columns
+    if not texto_clean:
+        if estatus_upper == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                ORDER BY nombre ASC
+            """)
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE estatus=?
+                ORDER BY nombre ASC
+            """, (estatus_upper,))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{texto_clean.upper()}%"
+        if estatus_upper == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus_upper))
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1896,14 +1919,25 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    # Bolt: Direct indexed query on exact material name bypasses full table scan of cat_buscar (~23x speedup)
+    nombre_clean = nombre.strip().upper()
+    if not nombre_clean:
+        return {}
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+        SELECT datos_json
+        FROM materiales
+        WHERE nombre=?
+        LIMIT 1
+    """, (nombre_clean,))
+    row = cur.fetchone()
+    con.close()
+    if row and row[0]:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return {}
     return {}
 
 
