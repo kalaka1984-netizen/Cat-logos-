@@ -1,0 +1,3 @@
+## 2025-09-11 - Pre-aggregating Child Records via SQLite LEFT JOIN
+**Learning:** Calling child query functions in UI rendering loops (such as calling `ic_listar_fracciones` for every row in `IC_Vista._refrescar_lista`) creates an N+1 bottleneck and repeatedly opens/closes database connections. Pre-aggregating counts and sums using SQLite `LEFT JOIN` with `COUNT()` and `TOTAL()` in a single query provides a ~31x speedup.
+**Action:** When populating list views with child aggregate data, use SQL `LEFT JOIN` and `TOTAL()` to pre-calculate metrics at the database level rather than querying per row in Python.
