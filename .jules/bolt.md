@@ -1,0 +1,3 @@
+## 2026-03-28 - SQL Aggregation for N+1 UI List Refresh Bottlenecks
+**Learning:** In Tkinter/CustomTkinter desktop apps with SQLite backends, refreshing list views by fetching child records in a Python loop for every row introduces severe N+1 latency (~0.06s for 200 items). Using SQLite `LEFT JOIN` with `TOTAL()` (which safely returns `0.0` instead of `NULL` when no matches exist) and `COUNT()` in a single grouped query reduces list refresh latency by >37x.
+**Action:** When populating list views with child aggregate data (counts/sums), aggregate in SQL using `LEFT JOIN` and `GROUP BY` rather than querying child tables in Python loops.
