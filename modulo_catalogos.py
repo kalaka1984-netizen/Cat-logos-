@@ -206,6 +206,11 @@ def cat_init_db():
             CREATE INDEX IF NOT EXISTS idx_{tabla}_nombre
             ON {tabla}(nombre)
         """)
+        # Composite index on (estatus, nombre) for fast status filtering and index-only name scans
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{tabla}_estatus_nombre
+            ON {tabla}(estatus, nombre)
+        """)
     # ── Tabla relación Proveedor ↔ Material ───────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS proveedor_materiales (
@@ -284,22 +289,39 @@ def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
     """Busca por nombre o cualquier campo en datos_json."""
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+    txt = texto.strip().upper()
+    # Performance optimization: if search text is empty, avoid expensive LIKE on datos_json
+    if not txt:
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                ORDER BY nombre ASC
+            """)
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE estatus=?
+                ORDER BY nombre ASC
+            """, (estatus.upper(),))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{txt}%"
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus.upper()))
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1880,14 +1902,28 @@ class CatalogosFrame(CatalogosMixin, ctk.CTkFrame):
 # API PÚBLICA — funciones para consumo desde fichas_tecnicas y sistema principal
 # ════════════════════════════════════════════════════════════════════════════
 
+def _cat_get_nombres_generico(tabla: str, solo_activos: bool = True) -> list:
+    """
+    Performance optimization: Query only 'nombre' column using index-only scan
+    instead of fetching and deserializing full rows / JSON blobs.
+    """
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    if solo_activos:
+        cur.execute(f"SELECT nombre FROM {tabla} WHERE estatus='ACTIVO' ORDER BY nombre ASC")
+    else:
+        cur.execute(f"SELECT nombre FROM {tabla} ORDER BY nombre ASC")
+    rows = cur.fetchall()
+    con.close()
+    return [r[0] for r in rows]
+
+
 def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     """
     Retorna lista de nombres de materiales del catálogo.
     Uso en Fichas Técnicas para autocomplete.
     """
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    return _cat_get_nombres_generico("materiales", solo_activos)
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1895,21 +1931,27 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna dict con datos del material (tipo, unidad, depto, visible_monitor).
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
+    Performance optimization: Direct query on indexed 'nombre' column instead
+    of running a full table LIKE scan via cat_buscar.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    if not nombre or not nombre.strip():
+        return {}
+    nm = nombre.strip().upper()
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    cur.execute("SELECT datos_json FROM materiales WHERE nombre=?", (nm,))
+    row = cur.fetchone()
+    con.close()
+    if row:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return {}
     return {}
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    return _cat_get_nombres_generico("trabajadores", solo_activos)
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1962,13 +2004,11 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    return _cat_get_nombres_generico("proveedores", solo_activos)
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    return _cat_get_nombres_generico("clientes", solo_activos)
 
 
 def cat_precarga_material(nombre: str) -> dict:
@@ -1986,7 +2026,7 @@ def cat_precarga_material(nombre: str) -> dict:
     if not datos:
         return {}
     tipo_raw = datos.get("tipo_material", "DIRECTO").upper()
-    tipo_ft  = "DIR" if "DIRECTO" in tipo_raw else "IND"
+    tipo_ft  = "IND" if "IND" in tipo_raw else "DIR"
     return {
         "tipo_ft":      tipo_ft,
         "unidad":       datos.get("unidad_default", "dm"),

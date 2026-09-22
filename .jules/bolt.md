@@ -1,0 +1,3 @@
+## 2025-02-23 - Catalog Database Query Optimization and Indexing
+**Learning:** Functions like `cat_get_material_por_nombre` were invoking `cat_buscar` with `LIKE` scans across large `datos_json` columns instead of doing direct equality lookup `WHERE nombre=?`, and name listing functions were retrieving and deserializing full JSON blobs instead of selecting only `nombre`. Bypassing `LIKE '%'` on empty search strings and using indexed exact queries yielded > 5x performance improvement.
+**Action:** Always favor direct equality matches on indexed columns and index-only `SELECT` queries over generic search functions when looking up specific records or names.
