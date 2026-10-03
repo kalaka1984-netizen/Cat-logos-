@@ -1896,14 +1896,23 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    if not nombre:
+        return {}
+    try:
+        # Bolt Optimization: Direct SELECT using indexed 'nombre' column
+        # Bypasses O(N) full-table scanning and LIKE search in cat_buscar
+        con = sqlite3.connect(CAT_DB_PATH)
+        cur = con.cursor()
+        cur.execute(
+            "SELECT datos_json FROM materiales WHERE nombre=?",
+            (nombre.strip().upper(),)
+        )
+        row = cur.fetchone()
+        con.close()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception:
+        pass
     return {}
 
 
@@ -1986,7 +1995,7 @@ def cat_precarga_material(nombre: str) -> dict:
     if not datos:
         return {}
     tipo_raw = datos.get("tipo_material", "DIRECTO").upper()
-    tipo_ft  = "DIR" if "DIRECTO" in tipo_raw else "IND"
+    tipo_ft  = "IND" if "IND" in tipo_raw else "DIR"
     return {
         "tipo_ft":      tipo_ft,
         "unidad":       datos.get("unidad_default", "dm"),
