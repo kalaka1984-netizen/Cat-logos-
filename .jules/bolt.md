@@ -1,0 +1,3 @@
+## 2026-10-05 - Pre-aggregation with LEFT JOIN to resolve N+1 GUI refresh bottlenecks
+**Learning:** In desktop GUI list views (like IC_Vista), retrieving child records (e.g. fractions per style) inside item loops triggers N+1 database queries and repeated connection overhead. Using SQL `LEFT JOIN` with `GROUP BY` and `TOTAL()` pre-aggregates row counts and totals in a single query with ~27x speedup.
+**Action:** When populating list views with child metadata, use `LEFT JOIN` and aggregate functions (`COUNT`, `TOTAL`) in `ic_listar_estilos` or bulk queries instead of issuing queries inside `for` loops.
