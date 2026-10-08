@@ -1880,14 +1880,36 @@ class CatalogosFrame(CatalogosMixin, ctk.CTkFrame):
 # API PÚBLICA — funciones para consumo desde fichas_tecnicas y sistema principal
 # ════════════════════════════════════════════════════════════════════════════
 
+def _cat_get_nombres_tabla(tabla: str, solo_activos: bool = True) -> list:
+    """
+    Helper para obtener nombres de una tabla del catálogo usando SELECT directo.
+    Evita leer la columna datos_json y evaluar LIKEs innecesarios de cat_buscar.
+    """
+    tablas_validas = ("materiales", "trabajadores", "proveedores", "clientes")
+    if tabla not in tablas_validas:
+        raise ValueError(f"Tabla no válida para consulta de nombres: {tabla}")
+
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    try:
+        if solo_activos:
+            cur.execute(
+                f"SELECT nombre FROM {tabla} WHERE estatus=? ORDER BY nombre ASC",
+                ("ACTIVO",),
+            )
+        else:
+            cur.execute(f"SELECT nombre FROM {tabla} ORDER BY nombre ASC")
+        return [row[0] for row in cur.fetchall()]
+    finally:
+        con.close()
+
+
 def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     """
     Retorna lista de nombres de materiales del catálogo.
     Uso en Fichas Técnicas para autocomplete.
     """
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    return _cat_get_nombres_tabla("materiales", solo_activos)
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1908,8 +1930,7 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    return _cat_get_nombres_tabla("trabajadores", solo_activos)
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1962,13 +1983,11 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    return _cat_get_nombres_tabla("proveedores", solo_activos)
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    return _cat_get_nombres_tabla("clientes", solo_activos)
 
 
 def cat_precarga_material(nombre: str) -> dict:
