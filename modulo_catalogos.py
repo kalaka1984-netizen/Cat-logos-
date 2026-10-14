@@ -206,6 +206,10 @@ def cat_init_db():
             CREATE INDEX IF NOT EXISTS idx_{tabla}_nombre
             ON {tabla}(nombre)
         """)
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{tabla}_estatus_nombre
+            ON {tabla}(estatus, nombre)
+        """)
     # ── Tabla relación Proveedor ↔ Material ───────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS proveedor_materiales (
@@ -1880,14 +1884,35 @@ class CatalogosFrame(CatalogosMixin, ctk.CTkFrame):
 # API PÚBLICA — funciones para consumo desde fichas_tecnicas y sistema principal
 # ════════════════════════════════════════════════════════════════════════════
 
+_ALLOWED_CATALOG_TABLES = {"materiales", "trabajadores", "proveedores", "clientes"}
+
+
+def _cat_get_nombres_tabla(tabla: str, solo_activos: bool = True) -> list:
+    """Helper optimizado para obtener lista de nombres de una tabla de catálogo.
+
+    Evita cat_buscar y consultas sobre datos_json, seleccionando solo 'nombre'.
+    """
+    if tabla not in _ALLOWED_CATALOG_TABLES:
+        raise ValueError(f"Tabla no permitida: {tabla}")
+
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    try:
+        if solo_activos:
+            cur.execute(f"SELECT nombre FROM {tabla} WHERE estatus='ACTIVO' ORDER BY nombre ASC")
+        else:
+            cur.execute(f"SELECT nombre FROM {tabla} ORDER BY nombre ASC")
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        con.close()
+
+
 def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     """
     Retorna lista de nombres de materiales del catálogo.
     Uso en Fichas Técnicas para autocomplete.
     """
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    return _cat_get_nombres_tabla("materiales", solo_activos)
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1896,20 +1921,28 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
+    nm = nombre.strip().upper()
+    if not nm:
+        return {}
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    try:
+        cur.execute("SELECT datos_json FROM materiales WHERE nombre=?", (nm,))
+        row = cur.fetchone()
+        if row and row[0]:
             try:
-                return json.loads(datos_json)
+                return json.loads(row[0])
             except Exception:
                 return {}
+    except Exception:
+        pass
+    finally:
+        con.close()
     return {}
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    return _cat_get_nombres_tabla("trabajadores", solo_activos)
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1962,13 +1995,11 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    return _cat_get_nombres_tabla("proveedores", solo_activos)
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    return _cat_get_nombres_tabla("clientes", solo_activos)
 
 
 def cat_precarga_material(nombre: str) -> dict:
