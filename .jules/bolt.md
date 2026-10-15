@@ -1,0 +1,3 @@
+## 2026-06-02 - N+1 Query Elimination in UI List Refresh
+**Learning:** Refreshing list views by executing individual child queries (e.g. `ic_listar_fracciones`) in a loop for each style in `ic_listar_estilos` created an N+1 query bottleneck (~40.6ms for 200 records). Replacing the loop with a single `LEFT JOIN` SQL query with `COUNT(f.id)` and `TOTAL(f.precio)` pre-aggregated the counts and sums directly in the database, achieving a ~31x speedup (~1.3ms).
+**Action:** Always pre-aggregate child record counts and sums in the primary listing SQL query using `LEFT JOIN` and `GROUP BY` when displaying parent-child lists in UI views.
