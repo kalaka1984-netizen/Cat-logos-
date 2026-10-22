@@ -284,22 +284,39 @@ def cat_buscar(tabla: str, texto: str = "", estatus: str = "TODOS"):
     """Busca por nombre o cualquier campo en datos_json."""
     con = sqlite3.connect(CAT_DB_PATH)
     cur = con.cursor()
-    like = f"%{texto.upper()}%"
-    if estatus == "TODOS":
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE nombre LIKE ? OR datos_json LIKE ?
-            ORDER BY nombre ASC
-        """, (like, like))
+    texto_clean = texto.strip().upper()
+    # Si la búsqueda está vacía, omitir LIKE en 'nombre' y 'datos_json' para evitar escaneo completo
+    if not texto_clean:
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                ORDER BY nombre ASC
+            """)
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE estatus=?
+                ORDER BY nombre ASC
+            """, (estatus.upper(),))
     else:
-        cur.execute(f"""
-            SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
-            FROM {tabla}
-            WHERE (nombre LIKE ? OR datos_json LIKE ?)
-            AND estatus=?
-            ORDER BY nombre ASC
-        """, (like, like, estatus.upper()))
+        like = f"%{texto_clean}%"
+        if estatus == "TODOS":
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE nombre LIKE ? OR datos_json LIKE ?
+                ORDER BY nombre ASC
+            """, (like, like))
+        else:
+            cur.execute(f"""
+                SELECT id, nombre, datos_json, estatus, fecha_alta, fecha_mod
+                FROM {tabla}
+                WHERE (nombre LIKE ? OR datos_json LIKE ?)
+                AND estatus=?
+                ORDER BY nombre ASC
+            """, (like, like, estatus.upper()))
     rows = cur.fetchall()
     con.close()
     return rows
@@ -1880,14 +1897,31 @@ class CatalogosFrame(CatalogosMixin, ctk.CTkFrame):
 # API PÚBLICA — funciones para consumo desde fichas_tecnicas y sistema principal
 # ════════════════════════════════════════════════════════════════════════════
 
+def _cat_get_nombres_tabla(tabla: str, solo_activos: bool = True) -> list:
+    """Helper optimizado para obtener únicamente la lista de nombres de un catálogo."""
+    ALLOWED_TABLES = {"materiales", "trabajadores", "proveedores", "clientes"}
+    if tabla not in ALLOWED_TABLES:
+        return []
+    try:
+        con = sqlite3.connect(CAT_DB_PATH)
+        cur = con.cursor()
+        if solo_activos:
+            cur.execute(f"SELECT nombre FROM {tabla} WHERE estatus='ACTIVO' ORDER BY nombre ASC")
+        else:
+            cur.execute(f"SELECT nombre FROM {tabla} ORDER BY nombre ASC")
+        rows = cur.fetchall()
+        con.close()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
 def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     """
     Retorna lista de nombres de materiales del catálogo.
     Uso en Fichas Técnicas para autocomplete.
     """
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    return _cat_get_nombres_tabla("materiales", solo_activos)
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1896,20 +1930,24 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
     Retorna {} si no existe.
     Uso: al seleccionar material en Fichas Técnicas → pre-llenar campos.
     """
-    filas = cat_buscar("materiales", nombre, "TODOS")
-    for fila in filas:
-        fid, nm, datos_json, *_ = fila
-        if nm == nombre.strip().upper():
-            try:
-                return json.loads(datos_json)
-            except Exception:
-                return {}
+    nm = nombre.strip().upper()
+    if not nm:
+        return {}
+    try:
+        con = sqlite3.connect(CAT_DB_PATH)
+        cur = con.cursor()
+        cur.execute("SELECT datos_json FROM materiales WHERE nombre=?", (nm,))
+        row = cur.fetchone()
+        con.close()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception:
+        pass
     return {}
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    return _cat_get_nombres_tabla("trabajadores", solo_activos)
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1962,13 +2000,11 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    return _cat_get_nombres_tabla("proveedores", solo_activos)
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    return _cat_get_nombres_tabla("clientes", solo_activos)
 
 
 def cat_precarga_material(nombre: str) -> dict:
