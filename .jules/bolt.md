@@ -1,0 +1,3 @@
+## 2026-06-02 - Direct Column Selects and Composite Indexes for Catalog Autocomplete
+**Learning:** `cat_get_nombres_*` and `cat_get_material_por_nombre` previously delegated to `cat_buscar`, causing SQLite to do full table scans and evaluate SQL `LIKE '%...'` against JSON blobs (`datos_json`). Selecting only the indexed `nombre` column with `_cat_get_nombres_tabla` and adding composite indexes `(estatus, nombre)` achieved a ~4x to ~5.4x speedup for catalog name lookups and autocomplete queries.
+**Action:** Always prefer direct single-column or exact equality SQL queries over generic search functions (`cat_buscar`) when fetching indexed metadata or specific records.
