@@ -1,0 +1,3 @@
+## 2026-10-29 - Composite Index & Index-Only Column Projection Optimization
+**Learning:** In SQLite databases using JSON text columns (`datos_json`), functions like `cat_get_nombres_*` that only need record names were performing full table scans and loading whole JSON payloads into memory. Furthermore, empty search queries in `cat_buscar` were unnecessarily evaluating SQL `LIKE` expressions across large JSON strings.
+**Action:** Always create composite indexes on `(estatus, nombre)` for catalog tables and project only the required `nombre` column for list/autocomplete lookups. Additionally, bypass SQL `LIKE` filtering when search query strings are empty.
