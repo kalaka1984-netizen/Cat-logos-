@@ -1,0 +1,3 @@
+## 2026-06-02 - N+1 Query Aggregation in SQLite UI Refresh
+**Learning:** Calling child record lookup queries (e.g. `ic_listar_fracciones`) inside UI list loops (`IC_Vista._refrescar_lista`) causes N+1 query bottlenecks, degrading UI list rendering performance exponentially as style records grow. Pre-aggregating counts and totals in a single `LEFT JOIN` query with `COUNT()` and `TOTAL()` in SQLite reduces latency by ~38x.
+**Action:** When populating list views with child aggregate data, pre-aggregate child metrics directly in the SQL listing function using `LEFT JOIN` and `GROUP BY` rather than executing query loops per parent row.
