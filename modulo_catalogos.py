@@ -206,6 +206,11 @@ def cat_init_db():
             CREATE INDEX IF NOT EXISTS idx_{tabla}_nombre
             ON {tabla}(nombre)
         """)
+        # Composite index for fast covering index scans on (estatus, nombre)
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS idx_{tabla}_estatus_nombre
+            ON {tabla}(estatus, nombre)
+        """)
     # ── Tabla relación Proveedor ↔ Material ───────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS proveedor_materiales (
@@ -1880,14 +1885,38 @@ class CatalogosFrame(CatalogosMixin, ctk.CTkFrame):
 # API PÚBLICA — funciones para consumo desde fichas_tecnicas y sistema principal
 # ════════════════════════════════════════════════════════════════════════════
 
+def _cat_get_nombres_tabla(tabla: str, solo_activos: bool = True) -> list:
+    """
+    Optimización: Consulta directa a la columna `nombre` ordenada por nombre,
+    aprovechando el índice `idx_{tabla}_estatus_nombre` (covering index scan).
+    Evita invocar `cat_buscar` que evalúa LIKE sobre `datos_json` y carga todas
+    las columnas completas en memoria.
+    """
+    valid_tables = {"materiales", "trabajadores", "proveedores", "clientes"}
+    if tabla not in valid_tables:
+        return []
+
+    con = sqlite3.connect(CAT_DB_PATH)
+    cur = con.cursor()
+    try:
+        if solo_activos:
+            cur.execute(
+                f"SELECT nombre FROM {tabla} WHERE estatus = ? ORDER BY nombre ASC",
+                ("ACTIVO",)
+            )
+        else:
+            cur.execute(f"SELECT nombre FROM {tabla} ORDER BY nombre ASC")
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        con.close()
+
+
 def cat_get_nombres_materiales(solo_activos: bool = True) -> list:
     """
     Retorna lista de nombres de materiales del catálogo.
     Uso en Fichas Técnicas para autocomplete.
     """
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    filas = cat_buscar("materiales", "", estatus)
-    return [f[1] for f in filas]
+    return _cat_get_nombres_tabla("materiales", solo_activos)
 
 
 def cat_get_material_por_nombre(nombre: str) -> dict:
@@ -1908,8 +1937,7 @@ def cat_get_material_por_nombre(nombre: str) -> dict:
 
 
 def cat_get_nombres_trabajadores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("trabajadores", "", estatus)]
+    return _cat_get_nombres_tabla("trabajadores", solo_activos)
 
 
 def cat_listar_trabajadores(solo_activos: bool = True) -> list:
@@ -1962,13 +1990,11 @@ def cat_alta_rapida_trabajador(nombre: str, departamento: str,
 
 
 def cat_get_nombres_proveedores(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("proveedores", "", estatus)]
+    return _cat_get_nombres_tabla("proveedores", solo_activos)
 
 
 def cat_get_nombres_clientes(solo_activos: bool = True) -> list:
-    estatus = "ACTIVO" if solo_activos else "TODOS"
-    return [f[1] for f in cat_buscar("clientes", "", estatus)]
+    return _cat_get_nombres_tabla("clientes", solo_activos)
 
 
 def cat_precarga_material(nombre: str) -> dict:
