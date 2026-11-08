@@ -1,0 +1,3 @@
+## 2025-05-15 - N+1 Query in Style Listing
+**Learning:** The style listing in Engineering of Costs (`ic_listar_estilos` / `IC_Vista._refrescar_lista`) was performing a separate query for each row (`ic_listar_fracciones`) to count fractions and sum prices, leading to $O(N)$ database roundtrips.
+**Action:** Use SQL `LEFT JOIN` and aggregation (`COUNT`, `TOTAL`) to pre-calculate these values in a single query. `TOTAL()` is preferred over `SUM()` in SQLite because `TOTAL()` always returns a floating-point number (`0.0` for empty sets) whereas `SUM()` returns `NULL`, avoiding extra `None` checks in Python.
